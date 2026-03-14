@@ -1,0 +1,42 @@
+# Gradle
+.gradle/
+build/
+out/
+*.jar
+*.war
+*.zip
+*.tar.gz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+*.iws
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.asc
+
+# Build directories
+*/build/
+*/target/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Node
+node_modules/
+npm-debug.log
+
+# Docker
+.dockerignore
+

@@ -1,0 +1,210 @@
+
+services:
+
+  # -----------------------------
+  # MySQL Database
+  # -----------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: patient-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ticketing
+    ports:
+      - "4406:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  # -----------------------------
+  # MySQL Database
+  # -----------------------------
+  auth-mysql:
+    image: mysql:8.0
+    container_name: auth-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ticketing
+    ports:
+      - "4407:3306"
+    volumes:
+      - auth-mysql-data:/var/lib/mysql
+
+  # -----------------------------
+  # Kafka (KRaft Mode - Fixed Listeners)
+  # -----------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: always
+    ports:
+      - "9092:9092"      # External (host)
+      - "29092:29092"    # Internal (docker network)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      KAFKA_LISTENERS: PLAINTEXT://:29092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+
+      # 🔥 REQUIRED FOR SINGLE BROKER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Optional but recommended
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+    healthcheck:
+      test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  # -----------------------------
+  # Billing Service
+  # -----------------------------
+  billing-svc:
+    build:
+      context: .
+      dockerfile: billing-svc/Dockerfile
+    container_name: billing-service
+    restart: always
+    ports:
+      - "9001:9001"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ticketing
+      DB_USERNAME: root
+      DB_PASSWORD: rootpassword
+
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+    depends_on:
+      - mysql
+      - kafka
+
+
+  # -----------------------------
+  # Patient Service
+  # -----------------------------
+  patient-svc:
+    build:
+      context: .
+      dockerfile: patient-svc/Dockerfile
+    container_name: patient-service
+    restart: always
+    ports:
+      - "8082:8082"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ticketing
+      DB_USERNAME: root
+      DB_PASSWORD: rootpassword
+
+      BILLING_SERVICE_ADDRESS: billing-svc
+      BILLING_SERVICE_PORT: 9001
+
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+    depends_on:
+      - mysql
+      - billing-svc
+      - kafka
+
+
+  # -----------------------------
+  # Analytics Service
+  # -----------------------------
+  analytics-svc:
+    build:
+      context: .
+      dockerfile: analytics-svc/Dockerfile
+    container_name: analytics-service
+    restart: always
+    ports:
+      - "8083:8083"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+
+  # -----------------------------
+  # Kafka UI
+  # -----------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: always
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - kafka
+
+  # -----------------------------
+  # API Gateway
+  # -----------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    restart: always
+    ports:
+      - "4004:4004"
+    environment:
+      PATIENT_SERVICE_HOST: patient-svc
+      PATIENT_SERVICE_PORT: 8082
+      BILLING_SERVICE_HOST: billing-svc
+      BILLING_SERVICE_PORT: 9001
+      AUTH_SERVICE_HOST: auth-svc
+      AUTH_SERVICE_PORT: 8084
+    depends_on:
+      - patient-svc
+      - billing-svc
+
+  # -----------------------------
+  # Auth Service
+  # -----------------------------
+  auth-svc:
+    build:
+      context: .
+      dockerfile: auth-svc/Dockerfile
+    container_name: auth-service
+    restart: always
+    ports:
+      - "8084:8084"
+    environment:
+      DB_HOST: auth-mysql
+      DB_PORT: 3306
+      DB_NAME: ticketing
+      DB_USERNAME: root
+      DB_PASSWORD: rootpassword
+      JWT_SECRET: c3VwZXItbG9uZy1zZWN1cmUtand0LXNlY3JldC1rZXktZm9yLWhzMjU2
+
+    depends_on:
+      - auth-mysql
+
+
+# -----------------------------
+# Volumes
+# -----------------------------
+volumes:
+  mysql-data:
+  auth-mysql-data:

@@ -1,0 +1,6 @@
+rootProject.name = 'patient-management'
+include 'patient-svc'
+include 'billing-svc'
+include 'analytics-svc'
+include 'api-gateway'
+include 'auth-svc'
